@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<title>Transmisión Radio</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,Arial,sans-serif}
+body.panel{background:#f2f2f2;color:#222;padding:16px}
+.wrap{max-width:1150px;margin:auto;display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+@media(max-width:800px){.wrap{grid-template-columns:1fr}}
+.col{display:flex;flex-direction:column;gap:16px}
+.card{background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 4px #0002}
+h1{font-size:20px;margin:0 0 12px}h2{font-size:15px;margin:0 0 8px}
+label{display:block;font-size:12px;margin:8px 0 3px;color:#555}
+label.chk{display:flex;gap:6px;align-items:center;font-size:13px;color:#222}
+input[type=text],input[type=number],textarea,select{width:100%;padding:8px;border:1px solid #bbb;border-radius:6px;font:inherit}
+textarea{min-height:90px}
+.modes{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.modes button{padding:14px 4px;font-size:14px;border:2px solid #ccc;border-radius:8px;background:#fafafa;cursor:pointer}
+.modes button.on{background:#c0392b;color:#fff;border-color:#c0392b}
+.prev{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:8px;overflow:hidden}
+.prev iframe{width:1920px;height:1080px;border:0;transform-origin:0 0;position:absolute;left:0;top:0}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.thumbs{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.th{position:relative;width:84px;height:60px;background:#ddd;border-radius:6px;overflow:hidden}
+.th img{width:100%;height:100%;object-fit:cover}
+.th b{position:absolute;top:1px;right:1px;background:#c0392bcc;color:#fff;border-radius:50%;width:18px;height:18px;text-align:center;font-size:12px;line-height:18px;cursor:pointer}
+.links{font-size:12px;word-break:break-all}
+.msg{font-size:12px;color:#c0392b}
+.seg{display:flex;gap:6px;align-items:center;padding:6px;border:2px solid #ddd;border-radius:8px;margin-bottom:6px}
+.seg.on{border-color:#c0392b;background:#fdecea}
+.seg .st{flex:1;min-width:0}.seg .st b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seg .st small{color:#777}.seg button{padding:6px 8px;cursor:pointer}
+/* PANTALLA */
+body.screen{background:#111;color:#fff;overflow:hidden;width:100vw;height:100vh}
+#stage{position:fixed;inset:0}
+.layer{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0;transition:opacity 1s}
+.layer.cover{object-fit:cover}.layer.show{opacity:1}
+#big{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:7vw;font-weight:800;text-align:center}
+#shade{position:absolute;inset:0;background:#000b;display:none}
+#interview{position:absolute;inset:0;display:none;flex-direction:row;align-items:center;gap:4vw;padding:12vh 7vw 6vh}
+#interview.show,#shade.show,#big.show{display:flex}
+#gimg{width:26vw;height:26vw;object-fit:cover;border-radius:1.5vw;border:.5vw solid #c0392b;display:none;flex:none}
+#gcol{flex:1}
+#gkind{font-size:2vw;font-weight:700;letter-spacing:.3vw;color:#ff8a7a;text-transform:uppercase;margin-bottom:1.2vh}
+#gname{font-size:5vw;font-weight:800;line-height:1}
+#grole{font-size:2.4vw;color:#ffb3a8;margin:.8vh 0 3vh;border-bottom:.5vh solid #c0392b;padding-bottom:2vh}
+#gtext{white-space:pre-wrap;line-height:1.25;font-weight:600}
+.badge{position:absolute;top:2.5vh;display:none;align-items:center;max-width:30vw}
+.badge.show{display:flex}
+.badge img{height:10vh;max-width:28vw;object-fit:contain;display:none}
+.badge span{background:#c0392b;padding:1vh 1.6vw;font-size:2vw;font-weight:700;border-radius:.6vw;display:none}
+#bl{left:2vw}#bp{right:2vw}
+</style></head>
+<body>
+<script>
+const P=new URLSearchParams(location.search);
+const VIEW=P.get('view')==='screen'?'screen':'panel';
+const SYNC=P.get('sync')||'';
+const KEY='radioState';
+const DEF={mode:'ads',radio:'',program:'',logoRadio:'',logoProg:'',showTag:true,
+ interval:8,ads:[],photos:[],kind:'Entrevista',segId:'',guest:'',role:'',text:'',size:3.2,guestImg:'',showGuestImg:false,
+ bg:'#111111',transp:false};
+let S=Object.assign({},DEF);
+try{Object.assign(S,JSON.parse(localStorage.getItem(KEY)||'{}'))}catch(e){}
+document.body.className=VIEW;
+const $=id=>document.getElementById(id);
+const q=p=>SYNC+(SYNC.includes('?')?'&':'?')+p;
+const rid=()=>Math.random().toString(36).slice(2,10);
+
+/* ---------- imágenes (se achican al subirlas) ---------- */
+const cache={};
+async function getImg(id){
+  if(!id)return '';if(cache[id])return cache[id];
+  let d='';
+  if(SYNC){try{d=await(await fetch(q('k=img_'+id+'&t='+Date.now()))).text()}catch(e){}}
+  else d=localStorage.getItem('img_'+id)||'';
+  if(d.startsWith('data:'))cache[id]=d;else d='';
+  return d;
+}
+async function putImg(id,d){
+  cache[id]=d;
+  if(SYNC)await fetch(q('k=img_'+id),{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:d});
+  else localStorage.setItem('img_'+id,d);
+}
+function resize(file,png,max){return new Promise((ok,no)=>{
+  const im=new Image(),u=URL.createObjectURL(file);
+  im.onerror=no;
+  im.onload=()=>{const r=Math.min(1,max/Math.max(im.width,im.height)),c=document.createElement('canvas');
+    c.width=Math.round(im.width*r);c.height=Math.round(im.height*r);
+    const x=c.getContext('2d');
+    if(!png){x.fillStyle='#000';x.fillRect(0,0,c.width,c.height)}
+    x.drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u);
+    ok(c.toDataURL(png?'image/png':'image/jpeg',.82))};
+  im.src=u})}
+
+/* ---------- estado y sincronización ---------- */
+let pushT;
+function save(){
+  try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
+  clearTimeout(pushT);
+  pushT=setTimeout(()=>{if(SYNC)fetch(q('k=state'),{method:'POST',mode:'no-cors',
+    headers:{'Content-Type':'text/plain'},body:JSON.stringify(S)}).catch(()=>{})},350);
+}
+async function pull(){
+  try{
+    let j;
+    if(SYNC)j=await(await fetch(q('k=state&t='+Date.now()))).json();
+    else j=JSON.parse(localStorage.getItem(KEY)||'null');
+    if(j&&JSON.stringify(j)!==JSON.stringify(S)){S=Object.assign({},DEF,j);renderScreen()}
+  }catch(e){}
+}
+
+/* ---------- PANTALLA ---------- */
+let idx=0,timer=null,cur=0,tok=0;
+function list(){
+  switch(S.mode){case 'ads':return S.ads;case 'photos':case 'interview':return S.photos;
+  case 'logo':return S.logoRadio?[S.logoRadio]:[];case 'program':return S.logoProg?[S.logoProg]:[];}
+  return [];
+}
+function badge(el,id,txt){
+  getImg(id).then(d=>{const im=el.querySelector('img'),sp=el.querySelector('span');
+    if(d){im.src=d;im.style.display='block';sp.style.display='none'}
+    else{im.style.display='none';sp.textContent=txt||'';sp.style.display=txt?'block':'none'}});
+}
+function renderScreen(){
+  const m=S.mode;
+  document.body.style.background=S.transp?'transparent':S.bg;
+  $('gkind').textContent=S.kind||'';$('gkind').style.display=S.kind?'block':'none';$('gname').textContent=S.guest;$('grole').textContent=S.role;$('grole').style.display=S.role?'block':'none';
+  $('gtext').textContent=S.text;$('gtext').style.fontSize=S.size+'vw';
+  $('interview').classList.toggle('show',m==='interview');
+  $('shade').classList.toggle('show',m==='interview');
+  const gi=$('gimg');
+  if(S.showGuestImg&&S.guestImg)getImg(S.guestImg).then(d=>{gi.src=d;gi.style.display=d?'block':'none'});else gi.style.display='none';
+  const corner=S.showTag&&(m==='photos'||m==='interview'||m==='pause');
+  $('bl').classList.toggle('show',corner);$('bp').classList.toggle('show',corner);
+  if(corner){badge($('bl'),S.logoRadio,S.radio);badge($('bp'),S.logoProg,S.program)}
+  const big=$('big'),needTxt=(m==='logo'&&!S.logoRadio)||(m==='program'&&!S.logoProg);
+  big.classList.toggle('show',needTxt);big.textContent=m==='logo'?S.radio:S.program;
+  ['l0','l1'].forEach(i=>$(i).classList.toggle('cover',m==='photos'||m==='interview'));
+  clearInterval(timer);idx=0;tok++;showImg();
+  if(list().length>1)timer=setInterval(()=>{idx++;showImg()},Math.max(2,S.interval)*1000);
+}
+async function showImg(){
+  const L=list(),a=$('l0'),b=$('l1'),t=tok;
+  if(!L.length){a.classList.remove('show');b.classList.remove('show');return}
+  const d=await getImg(L[idx%L.length]);
+  if(!d||t!==tok)return;
+  const nxt=cur?a:b,old=cur?b:a;
+  nxt.onload=()=>{nxt.classList.add('show');old.classList.remove('show');cur=1-cur};
+  nxt.src=d;
+}
+if(VIEW==='screen'){
+  document.body.innerHTML='<div id="stage"><img id="l0" class="layer"><img id="l1" class="layer">'+
+  '<div id="big"></div><div id="shade"></div>'+
+  '<div id="interview"><img id="gimg"><div id="gcol"><div id="gkind"></div><div id="gname"></div><div id="grole"></div><div id="gtext"></div></div></div>'+
+  '<div id="bl" class="badge"><img><span></span></div><div id="bp" class="badge"><img><span></span></div></div>';
+  renderScreen();pull();setInterval(pull,1500);addEventListener('storage',pull);
+}
+
+/* ---------- PANEL ---------- */
+function bind(id,key,tf,obj=S,cb=save){
+  const el=$(id);
+  if(el.type==='checkbox')el.checked=!!obj[key];else el.value=obj[key];
+  el.oninput=()=>{obj[key]=el.type==='checkbox'?el.checked:(tf?tf(el.value):el.value);cb()};
+}
+function setMode(m){S.mode=m;save();document.querySelectorAll('.modes button').forEach(b=>b.classList.toggle('on',b.dataset.m===m));drawSegs()}
+function scalePrev(){const p=$('prev');if(p)p.firstChild.style.transform='scale('+(p.clientWidth/1920)+')'}
+
+/* subidor: key del estado, múltiple?, png (logos con transparencia)? */
+const UP={};
+function uploader(box,key,multi,png,obj=S,cb=save){
+  const el=$(box);
+  el.innerHTML=`<input type="file" accept="image/*" ${multi?'multiple':''}><div class="thumbs"></div><div class="msg"></div>`;
+  const inp=el.querySelector('input'),th=el.querySelector('.thumbs'),msg=el.querySelector('.msg');
+  const ids=()=>multi?obj[key]:(obj[key]?[obj[key]]:[]);
+  function draw(){
+    th.innerHTML='';
+    ids().forEach(id=>{
+      const d=document.createElement('div');d.className='th';
+      d.innerHTML='<img><b title="Quitar">×</b>';
+      getImg(id).then(x=>d.querySelector('img').src=x);
+      d.querySelector('b').onclick=()=>{if(multi)obj[key]=obj[key].filter(i=>i!==id);else obj[key]='';cb();draw()};
+      th.appendChild(d);
+    });
+  }
+  inp.onchange=async()=>{
+    msg.textContent='Subiendo…';
+    for(const f of inp.files){
+      try{const id=rid();await putImg(id,await resize(f,png,png?1200:1600));
+        if(multi)obj[key]=obj[key].concat(id);else obj[key]=id;cb();draw()}
+      catch(e){msg.textContent='No se pudo subir '+f.name+(SYNC?'':' (¿memoria del navegador llena?)');return}
+    }
+    msg.textContent='';inp.value='';
+  };
+UP[box]=draw;draw();
+}
+
+/* ---------- retoque en vivo: no se envía hasta apretar Mostrar ---------- */
+const LIVEK=['kind','guest','role','text','size','guestImg','showGuestImg'];
+const LD={};LIVEK.forEach(k=>LD[k]=S[k]);
+function markPending(){
+  const p=$('pend');if(!p)return;
+  const d=LIVEK.some(k=>LD[k]!==S[k]);
+  p.textContent=d?'● Cambios sin mostrar':'✓ Es lo que se ve';p.style.color=d?'#c0392b':'#2a7d3f';
+}
+function applyLive(){LIVEK.forEach(k=>S[k]=LD[k]);save();markPending()}
+function onLive(){if($('auto').checked)applyLive();else markPending()}
+
+/* ---------- segmentos del programa ---------- */
+const BASE={kind:'Entrevista',guest:'',role:'',text:'',size:3.2,guestImg:'',showGuestImg:false};
+const D=Object.assign({},BASE);
+let SEG=[],editing=-1;
+const esc=t=>String(t||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const setDraft=o=>Object.assign(D,BASE,o);
+function fillDraft(){
+  ['kind','guest','role','text'].forEach(k=>$('d_'+k).value=D[k]);
+  $('d_size').value=D.size;$('d_showGuestImg').checked=D.showGuestImg;UP.d_u();
+  $('segSave').textContent=editing<0?'➕ Agregar al programa':'💾 Guardar cambios';
+  $('segCancel').style.display=editing<0?'none':'inline-block';
+}
+function cancelEdit(){editing=-1;setDraft({});fillDraft()}
+function saveSegs(){
+  const t=JSON.stringify(SEG);
+  try{localStorage.setItem('radioSegs',t)}catch(e){}
+  if(SYNC)fetch(q('k=segs'),{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:t}).catch(()=>{});
+}
+async function loadSegs(){
+  let t='';
+  if(SYNC)try{t=await(await fetch(q('k=segs&t='+Date.now()))).text()}catch(e){}
+  if(!t)t=localStorage.getItem('radioSegs')||'[]';
+  try{SEG=JSON.parse(t)}catch(e){SEG=[]}
+  drawSegs();
+}
+function drawSegs(){
+  const box=$('segList');if(!box)return;
+  box.innerHTML=SEG.length?SEG.map((s,i)=>{
+    const on=S.mode==='interview'&&S.segId===s.id;
+    return `<div class="seg${on?' on':''}"><div class="st"><small>${esc(s.kind)}${on?' · AL AIRE':''}</small><b>${esc(s.guest)||'(sin título)'}</b></div>
+    <button data-a="go" data-i="${i}">▶ Al aire</button><button data-a="ed" data-i="${i}" title="Editar">✎</button>
+    <button data-a="up" data-i="${i}">↑</button><button data-a="dn" data-i="${i}">↓</button><button data-a="rm" data-i="${i}">×</button></div>`;
+  }).join(''):'<div class="msg" style="color:#777">Todavía no cargaste nada. Armá el primer segmento abajo.</div>';
+}
+function goLive(i){
+  const s=SEG[i];if(!s)return;
+  Object.assign(S,{kind:s.kind,guest:s.guest,role:s.role,text:s.text,size:s.size,guestImg:s.guestImg,showGuestImg:s.showGuestImg,segId:s.id});
+  LIVEK.forEach(k=>LD[k]=S[k]);
+  ['kind','guest','role','text'].forEach(k=>$(k).value=S[k]);
+  $('size').value=S.size;$('showGuestImg').checked=S.showGuestImg;UP.u();markPending();
+  setMode('interview');
+}
+function segInit(){
+  $('segSave').onclick=()=>{
+    if(!D.guest.trim()&&!D.text.trim())return;
+    const s=Object.assign({},D,{id:editing<0?rid():SEG[editing].id});
+    if(editing<0)SEG.push(s);else SEG[editing]=s;
+    editing=-1;setDraft({});fillDraft();saveSegs();drawSegs();
+  };
+  $('segCancel').onclick=cancelEdit;
+  $('nextSeg').onclick=()=>{const i=SEG.findIndex(s=>s.id===S.segId);goLive(i+1<SEG.length?i+1:0)};
+  $('segList').onclick=e=>{
+    const b=e.target.closest('button');if(!b)return;
+    const i=+b.dataset.i,a=b.dataset.a;
+    if(a==='go')goLive(i);
+    else if(a==='ed'){editing=i;setDraft(SEG[i]);fillDraft();$('segEditor').scrollIntoView({behavior:'smooth'})}
+    else if(a==='rm'){if(confirm('¿Borrar este segmento?')){SEG.splice(i,1);cancelEdit();saveSegs();drawSegs()}}
+    else{const j=a==='up'?i-1:i+1;if(j>=0&&j<SEG.length){[SEG[i],SEG[j]]=[SEG[j],SEG[i]];cancelEdit();saveSegs();drawSegs()}}
+  };
+  loadSegs();
+}
+
+if(VIEW==='panel'){
+  const F=p=>`<label>Tipo</label><select id="${p}kind"><option value="Entrevista">Entrevista</option><option value="Tema">Tema</option><option value="">(sin etiqueta)</option></select>
+   <label>Título: nombre del entrevistado o tema</label><input type="text" id="${p}guest">
+   <label>Detalle / cargo (opcional)</label><input type="text" id="${p}role">
+   <label>Texto en pantalla</label><textarea id="${p}text" style="min-height:110px"></textarea>
+   <label>Tamaño del texto</label><input id="${p}size" type="range" min="1.5" max="6" step="0.1">
+   <label>Foto (opcional)</label><div id="${p}u"></div>
+   <label class="chk"><input id="${p}showGuestImg" type="checkbox"> Mostrar la foto</label>`;
+  const base=location.href.split('?')[0],sy=SYNC?'&sync='+encodeURIComponent(SYNC):'';
+  document.body.innerHTML=`
+  <h1>📻 Panel de transmisión — radio</h1>
+  <div class="wrap">
+   <div class="col">
+    <div class="card"><h2>Qué se ve en pantalla</h2>
+     <div class="modes">
+      <button data-m="ads">📢 Publicidad</button>
+      <button data-m="photos">🖼️ Fotos</button>
+      <button data-m="interview">🎙️ Entrevista</button>
+      <button data-m="logo">📻 Logo radio</button>
+      <button data-m="program">🎧 Programa</button>
+      <button data-m="pause">⏸️ Solo fondo</button>
+     </div></div>
+    <div class="card"><h2>📋 Programa de hoy</h2>
+     <div id="segList"></div>
+     <button id="nextSeg" style="margin-top:4px;padding:8px 12px;cursor:pointer">⏭️ Pasar al siguiente</button>
+    </div>
+    <div class="card" id="segEditor"><h2>Cargar una entrevista o un tema</h2>
+     ${F('d_')}
+     <div style="margin-top:10px"><button id="segSave" style="padding:8px 12px;cursor:pointer">➕ Agregar al programa</button>
+     <button id="segCancel" style="padding:8px 12px;cursor:pointer;display:none">Cancelar</button></div>
+    </div>
+    <div class="card"><h2>En pantalla ahora (retoque en vivo)</h2>
+     ${F('')}
+     <label class="chk" style="margin-top:8px"><input id="auto" type="checkbox"> Enviar a pantalla mientras escribo</label>
+     <div style="margin-top:8px"><button id="liveShow" style="padding:8px 12px;cursor:pointer;font-weight:700">▶ Mostrar en pantalla (Ctrl+Enter)</button>
+     <button id="liveClear" style="padding:8px 12px;cursor:pointer">🧹 Borrar texto</button>
+     <div id="pend" class="msg" style="margin-top:6px"></div></div>
+    </div>
+    <div class="card"><h2>Publicidad</h2>
+     <label>Subí una o varias imágenes (se rotan solas)</label><div id="u_ads"></div></div>
+    <div class="card"><h2>Fotos del programa / fondos</h2>
+     <label>Fotos de las personas del programa, o imágenes de fondo para las entrevistas</label><div id="u_photos"></div></div>
+   </div>
+   <div class="col">
+    <div class="card"><h2>Vista previa</h2>
+     <div class="prev" id="prev"><iframe src="${base}?view=screen${sy}"></iframe></div></div>
+    <div class="card"><h2>Identidad de la radio</h2>
+     <div class="row"><div><label>Nombre de la radio</label><input type="text" id="radio"></div>
+     <div><label>Nombre del programa</label><input type="text" id="program"></div></div>
+     <label>Imagen con el logo de la radio</label><div id="u_logoRadio"></div>
+     <label>Imagen del programa</label><div id="u_logoProg"></div>
+     <label class="chk"><input id="showTag" type="checkbox"> Mostrar logo/nombre en las esquinas (fotos, entrevista y fondo)</label>
+    </div>
+    <div class="card"><h2>Ajustes</h2>
+     <div class="row"><div><label>Segundos por imagen</label><input type="number" id="interval" min="2"></div>
+     <div><label>Color de fondo</label><input type="color" id="bg"></div></div>
+     <label class="chk"><input id="transp" type="checkbox"> Fondo transparente (para Streamlabs)</label></div>
+    <div class="card links"><h2>Link para Streamlabs</h2>
+     <a href="${base}?view=screen${sy}" target="_blank">${base}?view=screen${sy}</a></div>
+   </div>
+  </div>`;
+  ['radio','program','bg'].forEach(k=>bind(k,k));
+  bind('interval','interval',Number);
+  ['showTag','transp'].forEach(k=>bind(k,k));
+  ['kind','guest','role','text'].forEach(k=>bind(k,k,null,LD,onLive));
+  bind('size','size',Number,LD,onLive);bind('showGuestImg','showGuestImg',null,LD,onLive);
+  uploader('u','guestImg',false,false,LD,onLive);
+  $('liveShow').onclick=applyLive;
+  $('liveClear').onclick=()=>{LD.text='';$('text').value='';onLive()};
+  $('text').addEventListener('keydown',e=>{if(e.ctrlKey&&e.key==='Enter')applyLive()});
+  markPending();
+  ['kind','guest','role','text'].forEach(k=>bind('d_'+k,k,null,D,()=>{}));
+  bind('d_size','size',Number,D,()=>{});bind('d_showGuestImg','showGuestImg',null,D,()=>{});
+  uploader('d_u','guestImg',false,false,D,()=>{});
+  segInit();
+  uploader('u_ads','ads',true,false);
+  uploader('u_photos','photos',true,false);
+  uploader('u_logoRadio','logoRadio',false,true);
+  uploader('u_logoProg','logoProg',false,true);
+  document.querySelectorAll('.modes button').forEach(b=>b.onclick=()=>setMode(b.dataset.m));
+  setMode(S.mode);addEventListener('resize',scalePrev);scalePrev();
+}
+</script>
+</body></html>
