@@ -51,6 +51,7 @@ body.screen{background:#111;color:#fff;overflow:hidden;width:100vw;height:100vh}
 .badge img{height:10vh;max-width:28vw;object-fit:contain;display:none}
 .badge span{background:#c0392b;padding:1vh 1.6vw;font-size:2vw;font-weight:700;border-radius:.6vw;display:none}
 #bl{left:2vw}#bp{right:2vw}
+#adcap{position:absolute;left:0;right:0;bottom:0;padding:6vh 5vw 3.5vh;text-align:center;font-weight:700;line-height:1.2;background:linear-gradient(transparent,#000d);text-shadow:0 .2vh .6vh #000;display:none}
 </style></head>
 <body>
 <script>
@@ -59,7 +60,7 @@ const VIEW=P.get('view')==='screen'?'screen':'panel';
 const SYNC=P.get('sync')||'';
 const KEY='radioState';
 const DEF={mode:'ads',radio:'',program:'',logoRadio:'',logoProg:'',showTag:true,
- interval:8,ads:[],photos:[],kind:'Entrevista',segId:'',guest:'',role:'',text:'',size:3.2,guestImg:'',showGuestImg:false,
+ interval:8,ads:[],photos:[],kind:'Entrevista',segId:'',guest:'',role:'',text:'',size:3.2,color:'#ffffff',guestImg:'',showGuestImg:false,adCaps:{},capSize:2.6,capColor:'#ffffff',
  bg:'#111111',transp:false};
 let S=Object.assign({},DEF);
 try{Object.assign(S,JSON.parse(localStorage.getItem(KEY)||'{}'))}catch(e){}
@@ -127,7 +128,7 @@ function renderScreen(){
   const m=S.mode;
   document.body.style.background=S.transp?'transparent':S.bg;
   $('gkind').textContent=S.kind||'';$('gkind').style.display=S.kind?'block':'none';$('gname').textContent=S.guest;$('grole').textContent=S.role;$('grole').style.display=S.role?'block':'none';
-  $('gtext').textContent=S.text;$('gtext').style.fontSize=S.size+'vw';
+  $('gtext').textContent=S.text;$('gtext').style.fontSize=S.size+'vw';$('gtext').style.color=S.color;$('gname').style.color=S.color;
   $('interview').classList.toggle('show',m==='interview');
   $('shade').classList.toggle('show',m==='interview');
   const gi=$('gimg');
@@ -141,18 +142,23 @@ function renderScreen(){
   clearInterval(timer);idx=0;tok++;showImg();
   if(list().length>1)timer=setInterval(()=>{idx++;showImg()},Math.max(2,S.interval)*1000);
 }
+function setCap(id){
+  const c=$('adcap'),t=(S.mode==='ads'&&S.adCaps&&S.adCaps[id])||'';
+  c.textContent=t;c.style.display=t?'block':'none';c.style.fontSize=S.capSize+'vw';c.style.color=S.capColor;
+}
 async function showImg(){
   const L=list(),a=$('l0'),b=$('l1'),t=tok;
-  if(!L.length){a.classList.remove('show');b.classList.remove('show');return}
+  if(!L.length){a.classList.remove('show');b.classList.remove('show');setCap('');return}
   const d=await getImg(L[idx%L.length]);
   if(!d||t!==tok)return;
+  setCap(L[idx%L.length]);
   const nxt=cur?a:b,old=cur?b:a;
   nxt.onload=()=>{nxt.classList.add('show');old.classList.remove('show');cur=1-cur};
   nxt.src=d;
 }
 if(VIEW==='screen'){
   document.body.innerHTML='<div id="stage"><img id="l0" class="layer"><img id="l1" class="layer">'+
-  '<div id="big"></div><div id="shade"></div>'+
+  '<div id="big"></div><div id="shade"></div><div id="adcap"></div>'+
   '<div id="interview"><img id="gimg"><div id="gcol"><div id="gkind"></div><div id="gname"></div><div id="grole"></div><div id="gtext"></div></div></div>'+
   '<div id="bl" class="badge"><img><span></span></div><div id="bp" class="badge"><img><span></span></div></div>';
   renderScreen();pull();setInterval(pull,1500);addEventListener('storage',pull);
@@ -197,7 +203,7 @@ UP[box]=draw;draw();
 }
 
 /* ---------- retoque en vivo: no se envía hasta apretar Mostrar ---------- */
-const LIVEK=['kind','guest','role','text','size','guestImg','showGuestImg'];
+const LIVEK=['kind','guest','role','text','size','color','guestImg','showGuestImg'];
 const LD={};LIVEK.forEach(k=>LD[k]=S[k]);
 function markPending(){
   const p=$('pend');if(!p)return;
@@ -207,15 +213,30 @@ function markPending(){
 function applyLive(){LIVEK.forEach(k=>S[k]=LD[k]);save();markPending()}
 function onLive(){if($('auto').checked)applyLive();else markPending()}
 
+/* ---------- descripciones de las publicidades ---------- */
+function drawCaps(){
+  const box=$('adCaps');if(!box)return;
+  box.innerHTML=S.ads.length?'<label>Descripción debajo de cada publicidad (opcional)</label>':'';
+  S.ads.forEach(id=>{
+    const r=document.createElement('div');
+    r.style.cssText='display:flex;gap:8px;align-items:center;margin-top:6px';
+    r.innerHTML='<div class="th" style="flex:none"><img></div><input type="text" placeholder="Ej: Ferretería López · Av. Siempre Viva 123">';
+    getImg(id).then(x=>r.querySelector('img').src=x);
+    const i=r.querySelector('input');i.value=(S.adCaps&&S.adCaps[id])||'';
+    i.oninput=()=>{S.adCaps=Object.assign({},S.adCaps,{[id]:i.value});save()};
+    box.appendChild(r);
+  });
+}
+
 /* ---------- segmentos del programa ---------- */
-const BASE={kind:'Entrevista',guest:'',role:'',text:'',size:3.2,guestImg:'',showGuestImg:false};
+const BASE={kind:'Entrevista',guest:'',role:'',text:'',size:3.2,color:'#ffffff',guestImg:'',showGuestImg:false};
 const D=Object.assign({},BASE);
 let SEG=[],editing=-1;
 const esc=t=>String(t||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const setDraft=o=>Object.assign(D,BASE,o);
 function fillDraft(){
   ['kind','guest','role','text'].forEach(k=>$('d_'+k).value=D[k]);
-  $('d_size').value=D.size;$('d_showGuestImg').checked=D.showGuestImg;UP.d_u();
+  $('d_size').value=D.size;$('d_color').value=D.color;$('d_showGuestImg').checked=D.showGuestImg;UP.d_u();
   $('segSave').textContent=editing<0?'➕ Agregar al programa':'💾 Guardar cambios';
   $('segCancel').style.display=editing<0?'none':'inline-block';
 }
@@ -243,10 +264,10 @@ function drawSegs(){
 }
 function goLive(i){
   const s=SEG[i];if(!s)return;
-  Object.assign(S,{kind:s.kind,guest:s.guest,role:s.role,text:s.text,size:s.size,guestImg:s.guestImg,showGuestImg:s.showGuestImg,segId:s.id});
+  Object.assign(S,{kind:s.kind,guest:s.guest,role:s.role,text:s.text,size:s.size,color:s.color||'#ffffff',guestImg:s.guestImg,showGuestImg:s.showGuestImg,segId:s.id});
   LIVEK.forEach(k=>LD[k]=S[k]);
   ['kind','guest','role','text'].forEach(k=>$(k).value=S[k]);
-  $('size').value=S.size;$('showGuestImg').checked=S.showGuestImg;UP.u();markPending();
+  $('size').value=S.size;$('color').value=S.color;$('showGuestImg').checked=S.showGuestImg;UP.u();markPending();
   setMode('interview');
 }
 function segInit(){
@@ -275,6 +296,7 @@ if(VIEW==='panel'){
    <label>Detalle / cargo (opcional)</label><input type="text" id="${p}role">
    <label>Texto en pantalla</label><textarea id="${p}text" style="min-height:110px"></textarea>
    <label>Tamaño del texto</label><input id="${p}size" type="range" min="1.5" max="6" step="0.1">
+   <label>Color del texto</label><input id="${p}color" type="color">
    <label>Foto (opcional)</label><div id="${p}u"></div>
    <label class="chk"><input id="${p}showGuestImg" type="checkbox"> Mostrar la foto</label>`;
   const base=location.href.split('?')[0],sy=SYNC?'&sync='+encodeURIComponent(SYNC):'';
@@ -308,7 +330,10 @@ if(VIEW==='panel'){
      <div id="pend" class="msg" style="margin-top:6px"></div></div>
     </div>
     <div class="card"><h2>Publicidad</h2>
-     <label>Subí una o varias imágenes (se rotan solas)</label><div id="u_ads"></div></div>
+     <label>Subí una o varias imágenes (se rotan solas)</label><div id="u_ads"></div>
+     <div id="adCaps"></div>
+     <div class="row"><div><label>Tamaño de la descripción</label><input id="capSize" type="range" min="1.2" max="5" step="0.1"></div>
+     <div><label>Color de la descripción</label><input id="capColor" type="color"></div></div></div>
     <div class="card"><h2>Fotos del programa / fondos</h2>
      <label>Fotos de las personas del programa, o imágenes de fondo para las entrevistas</label><div id="u_photos"></div></div>
    </div>
@@ -334,17 +359,18 @@ if(VIEW==='panel'){
   bind('interval','interval',Number);
   ['showTag','transp'].forEach(k=>bind(k,k));
   ['kind','guest','role','text'].forEach(k=>bind(k,k,null,LD,onLive));
-  bind('size','size',Number,LD,onLive);bind('showGuestImg','showGuestImg',null,LD,onLive);
+  bind('size','size',Number,LD,onLive);bind('color','color',null,LD,onLive);bind('showGuestImg','showGuestImg',null,LD,onLive);
   uploader('u','guestImg',false,false,LD,onLive);
   $('liveShow').onclick=applyLive;
   $('liveClear').onclick=()=>{LD.text='';$('text').value='';onLive()};
   $('text').addEventListener('keydown',e=>{if(e.ctrlKey&&e.key==='Enter')applyLive()});
   markPending();
   ['kind','guest','role','text'].forEach(k=>bind('d_'+k,k,null,D,()=>{}));
-  bind('d_size','size',Number,D,()=>{});bind('d_showGuestImg','showGuestImg',null,D,()=>{});
+  bind('d_size','size',Number,D,()=>{});bind('d_color','color',null,D,()=>{});bind('d_showGuestImg','showGuestImg',null,D,()=>{});
   uploader('d_u','guestImg',false,false,D,()=>{});
   segInit();
-  uploader('u_ads','ads',true,false);
+  uploader('u_ads','ads',true,false,S,()=>{save();drawCaps()});
+  bind('capSize','capSize',Number);bind('capColor','capColor');drawCaps();
   uploader('u_photos','photos',true,false);
   uploader('u_logoRadio','logoRadio',false,true);
   uploader('u_logoProg','logoProg',false,true);
