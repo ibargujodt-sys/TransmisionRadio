@@ -58,7 +58,7 @@ body.screen{background:#111;color:#fff;overflow:hidden;width:100vw;height:100vh}
 <script>
 const P=new URLSearchParams(location.search);
 const VIEW=P.get('view')==='screen'?'screen':'panel';
-const SYNC=P.get('sync')||'';
+const SYNC=(P.get('sync')||'').trim().replace(/\/macros\/u\/\d+\//,'/macros/');
 const KEY='radioState';
 const DEF={mode:'ads',radio:'',program:'',logoRadio:'',logoProg:'',showTag:true,
  interval:8,ads:[],photos:[],kind:'Entrevista',segId:'',guest:'',role:'',text:'',size:3.2,color:'#ffffff',guestImg:'',showGuestImg:false,adCaps:{},capSize:2.6,capColor:'#ffffff',
@@ -116,7 +116,7 @@ async function pull(){
     }else{dbg('SIN script (sync vacío) · solo lee este navegador');j=JSON.parse(localStorage.getItem(KEY)||'null')}
     if(j&&JSON.stringify(j)!==JSON.stringify(S)){S=Object.assign({},DEF,j);renderScreen()}
     if(j)dbg('OK · modo='+j.mode+' · pub='+((j.ads||[]).length)+' · fotos='+((j.photos||[]).length));
-  }catch(e){dbg('ERROR: '+e.message+(SYNC?'':' (sin sync)'))}
+  }catch(e){dbg('ERROR: '+e.message+' · url='+(SYNC?SYNC.slice(0,45)+'…'+SYNC.slice(-10):'(vacía)')+' · '+(navigator.userAgent.match(/Chrome\/[\d.]+/)||['?'])[0])}
 }
 
 /* ---------- PANTALLA ---------- */
