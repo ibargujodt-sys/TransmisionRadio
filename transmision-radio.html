@@ -97,11 +97,11 @@ function resize(file,png,max){return new Promise((ok,no)=>{
   im.src=u})}
 
 /* ---------- estado y sincronización ---------- */
-let pushT;
+let pushT,blocked=false;
 function save(){
   try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
   clearTimeout(pushT);
-  pushT=setTimeout(()=>{if(SYNC)fetch(q('k=state'),{method:'POST',mode:'no-cors',
+  pushT=setTimeout(()=>{if(SYNC&&!blocked)fetch(q('k=state'),{method:'POST',mode:'no-cors',
     headers:{'Content-Type':'text/plain'},body:JSON.stringify(S)}).catch(()=>{})},350);
 }
 const dbg=m=>{const d=document.getElementById('dbg');if(d)d.textContent=m};
@@ -252,14 +252,15 @@ function cancelEdit(){editing=-1;setDraft({});fillDraft()}
 function saveSegs(){
   const t=JSON.stringify(SEG);
   try{localStorage.setItem('radioSegs',t)}catch(e){}
-  if(SYNC)fetch(q('k=segs'),{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:t}).catch(()=>{});
+  if(SYNC&&!blocked)fetch(q('k=segs'),{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:t}).catch(()=>{});
 }
 async function loadSegs(){
-  let t='';
-  if(SYNC)try{t=await(await fetch(q('k=segs&t='+Date.now()))).text()}catch(e){}
-  if(!t)t=localStorage.getItem('radioSegs')||'[]';
+  let t='',ok=false,fromLocal=false;
+  if(SYNC)try{t=await(await fetch(q('k=segs&t='+Date.now()))).text();ok=true}catch(e){}
+  if(!t){t=localStorage.getItem('radioSegs')||'[]';fromLocal=true}
   try{SEG=JSON.parse(t)}catch(e){SEG=[]}
   drawSegs();
+  if(SYNC&&ok&&fromLocal&&SEG.length)saveSegs();
 }
 function drawSegs(){
   const box=$('segList');if(!box)return;
@@ -298,7 +299,7 @@ function segInit(){
   loadSegs();
 }
 
-if(VIEW==='panel'){
+function panelStart(){
   const F=p=>`<label>Tipo</label><select id="${p}kind"><option value="Entrevista">Entrevista</option><option value="Tema">Tema</option><option value="">(sin etiqueta)</option></select>
    <label>Título: nombre del entrevistado o tema</label><input type="text" id="${p}guest">
    <label>Detalle / cargo (opcional)</label><input type="text" id="${p}role">
@@ -360,7 +361,8 @@ if(VIEW==='panel'){
      <div><label>Color de fondo</label><input type="color" id="bg"></div></div>
      <label class="chk"><input id="transp" type="checkbox"> Fondo transparente (para Streamlabs)</label></div>
     <div class="card links"><h2>Link para Streamlabs</h2>
-     <a href="${base}?view=screen${sy}" target="_blank">${base}?view=screen${sy}</a></div>
+     <a href="${base}?view=screen${sy}" target="_blank">${base}?view=screen${sy}</a>
+     ${SYNC?'':'<div class="msg" style="margin-top:8px">⚠️ Abriste el panel SIN &amp;sync=. Lo que cargues NO llega a Streamlabs. Abrilo con ...?view=panel&amp;sync=URL_DEL_SCRIPT</div>'}</div>
    </div>
   </div>`;
   ['radio','program','bg'].forEach(k=>bind(k,k));
@@ -385,5 +387,32 @@ if(VIEW==='panel'){
   document.querySelectorAll('.modes button').forEach(b=>b.onclick=()=>setMode(b.dataset.m));
   setMode(S.mode);addEventListener('resize',scalePrev);scalePrev();
 }
+
+/* pasa a la nube las imágenes que se cargaron sin &sync */
+async function migrate(){
+  const ids=new Set([].concat(S.ads||[],S.photos||[],[S.logoRadio,S.logoProg,S.guestImg]).filter(Boolean));
+  try{JSON.parse(localStorage.getItem('radioSegs')||'[]').forEach(x=>x.guestImg&&ids.add(x.guestImg))}catch(e){}
+  for(const id of ids){
+    const d=localStorage.getItem('img_'+id);
+    if(d&&!localStorage.getItem('mig_'+id)){
+      try{await putImg(id,d);localStorage.setItem('mig_'+id,'1')}catch(e){}
+    }
+  }
+}
+async function boot(){
+  if(SYNC){
+    try{
+      const j=await(await fetch(q('k=state&t='+Date.now()))).json();
+      if(j&&Object.keys(j).length)S=Object.assign({},DEF,j);
+    }catch(e){
+      blocked=true;
+      alert('No pude leer los datos del script (¿sin internet o link mal copiado?). Recargá la página: mientras tanto no se guarda nada en la nube.');
+    }
+    LIVEK.forEach(k=>LD[k]=S[k]);
+  }
+  panelStart();
+  if(SYNC&&!blocked)migrate();
+}
+if(VIEW==='panel')boot();
 </script>
 </body></html>
