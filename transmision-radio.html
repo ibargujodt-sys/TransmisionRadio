@@ -73,11 +73,27 @@ const q=p=>SYNC+(SYNC.includes('?')?'&':'?')+p;
 const rid=()=>Math.random().toString(36).slice(2,10);
 
 /* ---------- imágenes (se achican al subirlas) ---------- */
+/* lectura del script: primero fetch; si el navegador (ej. Streamlabs) lo bloquea, usa JSONP (etiqueta <script>) */
+let useJsonp=false;
+function jsonp(params){return new Promise((res,rej)=>{
+  const cb='cb'+Math.random().toString(36).slice(2),sc=document.createElement('script');
+  const t=setTimeout(()=>{clean();rej(new Error('jsonp: sin respuesta (¿script sin actualizar?)'))},20000);
+  function clean(){clearTimeout(t);delete window[cb];sc.remove()}
+  window[cb]=d=>{clean();res(d)};
+  sc.onerror=()=>{clean();rej(new Error('jsonp: no cargó'))};
+  sc.src=q(params+'&callback='+cb);document.head.appendChild(sc);
+})}
+async function remoteGet(params){
+  if(!useJsonp){
+    try{const r=await fetch(q(params));return await r.text()}catch(e){useJsonp=true}
+  }
+  try{return await jsonp(params)}catch(e){useJsonp=false;throw e}
+}
 const cache={};
 async function getImg(id){
   if(!id)return '';if(cache[id])return cache[id];
   let d='';
-  if(SYNC){try{d=await(await fetch(q('k=img_'+id+'&t='+Date.now()))).text()}catch(e){}}
+  if(SYNC){try{d=await remoteGet('k=img_'+id+'&t='+Date.now())}catch(e){}}
   else d=localStorage.getItem('img_'+id)||'';
   if(d.startsWith('data:'))cache[id]=d;else d='';
   return d;
@@ -111,14 +127,13 @@ async function pull(){
   try{
     let j;
     if(SYNC&&!PREVIEW){
-      const r=await fetch(q('k=state&t='+Date.now()));
-      const t=await r.text();
-      dbg('script: HTTP '+r.status+' · '+t.slice(0,60));
+      const t=await remoteGet('k=state&t='+Date.now());
+      dbg('script ('+(useJsonp?'jsonp':'fetch')+') · '+t.slice(0,50));
       j=JSON.parse(t);
     }else{if(!PREVIEW)dbg('SIN script (sync vacío) · solo lee este navegador');j=JSON.parse(localStorage.getItem(KEY)||'null')}
     if(j&&JSON.stringify(j)!==JSON.stringify(S)){S=Object.assign({},DEF,j);renderScreen()}
     lastFail=false;oks++;
-    if(j&&!PREVIEW)dbg('OK #'+oks+' (errores '+errs+') · modo='+j.mode+' · pub='+((j.ads||[]).length)+' · fotos='+((j.photos||[]).length));
+    if(j&&!PREVIEW)dbg('OK #'+oks+' ('+(useJsonp?'jsonp':'fetch')+', errores '+errs+') · modo='+j.mode+' · pub='+((j.ads||[]).length)+' · fotos='+((j.photos||[]).length));
   }catch(e){lastFail=true;errs++;dbg('ERROR #'+errs+' (ok '+oks+'): '+e.message+' · url='+(SYNC?SYNC.slice(0,45)+'…'+SYNC.slice(-10):'(vacía)')+' · '+(navigator.userAgent.match(/Chrome\/[\d.]+/)||['?'])[0])}
 }
 
@@ -260,7 +275,7 @@ function saveSegs(){
 }
 async function loadSegs(){
   let t='',ok=false,fromLocal=false;
-  if(SYNC)try{t=await(await fetch(q('k=segs&t='+Date.now()))).text();ok=true}catch(e){}
+  if(SYNC)try{t=await remoteGet('k=segs&t='+Date.now());ok=true}catch(e){}
   if(!t){t=localStorage.getItem('radioSegs')||'[]';fromLocal=true}
   try{SEG=JSON.parse(t)}catch(e){SEG=[]}
   drawSegs();
@@ -406,7 +421,7 @@ async function migrate(){
 async function boot(){
   if(SYNC){
     try{
-      const j=await(await fetch(q('k=state&t='+Date.now()))).json();
+      const j=JSON.parse(await remoteGet('k=state&t='+Date.now())||'{}');
       if(j&&Object.keys(j).length)S=Object.assign({},DEF,j);
     }catch(e){
       blocked=true;
