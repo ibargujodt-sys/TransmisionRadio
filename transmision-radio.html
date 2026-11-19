@@ -74,7 +74,7 @@ const rid=()=>Math.random().toString(36).slice(2,10);
 
 /* ---------- imágenes (se achican al subirlas) ---------- */
 /* lectura del script: primero fetch; si el navegador (ej. Streamlabs) lo bloquea, usa JSONP (etiqueta <script>) */
-let useJsonp=false;
+let useJsonp=false,imgMsg='';
 function jsonp(params){return new Promise((res,rej)=>{
   const cb='cb'+Math.random().toString(36).slice(2),sc=document.createElement('script');
   const t=setTimeout(()=>{clean();rej(new Error('jsonp: sin respuesta (¿script sin actualizar?)'))},20000);
@@ -92,16 +92,22 @@ async function remoteGet(params){
 const cache={};
 async function getImg(id){
   if(!id)return '';if(cache[id])return cache[id];
-  let d='';
-  if(SYNC){try{d=await remoteGet('k=img_'+id+'&t='+Date.now())}catch(e){}}
-  else d=localStorage.getItem('img_'+id)||'';
-  if(d.startsWith('data:'))cache[id]=d;else d='';
+  let d=localStorage.getItem('img_'+id)||'';
+  if(!d&&SYNC){try{d=await remoteGet('k=img_'+id+'&t='+Date.now())}catch(e){imgMsg='img '+id+': '+e.message}}
+  if(d.startsWith('data:')){cache[id]=d;imgMsg=''}
+  else{d='';if(!imgMsg)imgMsg='img '+id+': vacía (no está guardada en Drive)'}
   return d;
 }
 async function putImg(id,d){
   cache[id]=d;
-  if(SYNC)await fetch(q('k=img_'+id),{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:d});
-  else localStorage.setItem('img_'+id,d);
+  try{localStorage.setItem('img_'+id,d)}catch(e){if(!SYNC)throw e}
+  if(SYNC){
+    await fetch(q('k=img_'+id),{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:d});
+    let back='';
+    try{back=await remoteGet('k=img_'+id+'&t='+Date.now())}catch(e){}
+    if(!back.startsWith('data:'))window.driveWarn='⚠️ Google Drive no guardó la imagen: falta autorizar el script de Google. La imagen quedó solo en este navegador; cuando lo autorices se sube sola al abrir el panel.';
+    else try{localStorage.setItem('mig_'+SYNC.slice(-14)+'_'+id,'1')}catch(e){}
+  }
 }
 function resize(file,png,max){return new Promise((ok,no)=>{
   const im=new Image(),u=URL.createObjectURL(file);
@@ -133,7 +139,7 @@ async function pull(){
     }else{if(!PREVIEW)dbg('SIN script (sync vacío) · solo lee este navegador');j=JSON.parse(localStorage.getItem(KEY)||'null')}
     if(j&&JSON.stringify(j)!==JSON.stringify(S)){S=Object.assign({},DEF,j);renderScreen()}
     lastFail=false;oks++;
-    if(j&&!PREVIEW)dbg('OK #'+oks+' ('+(useJsonp?'jsonp':'fetch')+', errores '+errs+') · modo='+j.mode+' · pub='+((j.ads||[]).length)+' · fotos='+((j.photos||[]).length));
+    if(j&&!PREVIEW)dbg('OK #'+oks+' ('+(useJsonp?'jsonp':'fetch')+', errores '+errs+') · modo='+j.mode+' · pub='+((j.ads||[]).length)+' · fotos='+((j.photos||[]).length)+(imgMsg?' · '+imgMsg:''));
   }catch(e){lastFail=true;errs++;dbg('ERROR #'+errs+' (ok '+oks+'): '+e.message+' · url='+(SYNC?SYNC.slice(0,45)+'…'+SYNC.slice(-10):'(vacía)')+' · '+(navigator.userAgent.match(/Chrome\/[\d.]+/)||['?'])[0])}
 }
 
@@ -218,13 +224,13 @@ function uploader(box,key,multi,png,obj=S,cb=save){
     });
   }
   inp.onchange=async()=>{
-    msg.textContent='Subiendo…';
+    window.driveWarn='';msg.textContent='Subiendo…';
     for(const f of inp.files){
       try{const id=rid();await putImg(id,await resize(f,png,png?1200:1600));
         if(multi)obj[key]=obj[key].concat(id);else obj[key]=id;cb();draw()}
       catch(e){msg.textContent='No se pudo subir '+f.name+(SYNC?'':' (¿memoria del navegador llena?)');return}
     }
-    msg.textContent='';inp.value='';
+    msg.textContent=window.driveWarn||'';inp.value='';
   };
 UP[box]=draw;draw();
 }
@@ -412,9 +418,9 @@ async function migrate(){
   const ids=new Set([].concat(S.ads||[],S.photos||[],[S.logoRadio,S.logoProg,S.guestImg]).filter(Boolean));
   try{JSON.parse(localStorage.getItem('radioSegs')||'[]').forEach(x=>x.guestImg&&ids.add(x.guestImg))}catch(e){}
   for(const id of ids){
-    const d=localStorage.getItem('img_'+id);
-    if(d&&!localStorage.getItem('mig_'+id)){
-      try{await putImg(id,d);localStorage.setItem('mig_'+id,'1')}catch(e){}
+    const d=localStorage.getItem('img_'+id),mk='mig_'+SYNC.slice(-14)+'_'+id;
+    if(d&&!localStorage.getItem(mk)){
+      try{await putImg(id,d);localStorage.setItem(mk,'1')}catch(e){}
     }
   }
 }
