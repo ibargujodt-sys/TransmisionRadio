@@ -60,6 +60,8 @@ const P=new URLSearchParams(location.search);
 const VIEW=P.get('view')==='screen'?'screen':'panel';
 const SYNC=(P.get('sync')||'').trim().replace(/\/macros\/u\/\d+\//,'/macros/');
 const KEY='radioState';
+const PREVIEW=P.get('preview')==='1';
+let lastFail=false,oks=0,errs=0;
 const DEF={mode:'ads',radio:'',program:'',logoRadio:'',logoProg:'',showTag:true,
  interval:8,ads:[],photos:[],kind:'Entrevista',segId:'',guest:'',role:'',text:'',size:3.2,color:'#ffffff',guestImg:'',showGuestImg:false,adCaps:{},capSize:2.6,capColor:'#ffffff',
  bg:'#111111',transp:false};
@@ -108,15 +110,16 @@ const dbg=m=>{const d=document.getElementById('dbg');if(d)d.textContent=m};
 async function pull(){
   try{
     let j;
-    if(SYNC){
+    if(SYNC&&!PREVIEW){
       const r=await fetch(q('k=state&t='+Date.now()));
       const t=await r.text();
       dbg('script: HTTP '+r.status+' · '+t.slice(0,60));
       j=JSON.parse(t);
-    }else{dbg('SIN script (sync vacío) · solo lee este navegador');j=JSON.parse(localStorage.getItem(KEY)||'null')}
+    }else{if(!PREVIEW)dbg('SIN script (sync vacío) · solo lee este navegador');j=JSON.parse(localStorage.getItem(KEY)||'null')}
     if(j&&JSON.stringify(j)!==JSON.stringify(S)){S=Object.assign({},DEF,j);renderScreen()}
-    if(j)dbg('OK · modo='+j.mode+' · pub='+((j.ads||[]).length)+' · fotos='+((j.photos||[]).length));
-  }catch(e){dbg('ERROR: '+e.message+' · url='+(SYNC?SYNC.slice(0,45)+'…'+SYNC.slice(-10):'(vacía)')+' · '+(navigator.userAgent.match(/Chrome\/[\d.]+/)||['?'])[0])}
+    lastFail=false;oks++;
+    if(j&&!PREVIEW)dbg('OK #'+oks+' (errores '+errs+') · modo='+j.mode+' · pub='+((j.ads||[]).length)+' · fotos='+((j.photos||[]).length));
+  }catch(e){lastFail=true;errs++;dbg('ERROR #'+errs+' (ok '+oks+'): '+e.message+' · url='+(SYNC?SYNC.slice(0,45)+'…'+SYNC.slice(-10):'(vacía)')+' · '+(navigator.userAgent.match(/Chrome\/[\d.]+/)||['?'])[0])}
 }
 
 /* ---------- PANTALLA ---------- */
@@ -169,7 +172,8 @@ if(VIEW==='screen'){
   '<div id="interview"><img id="gimg"><div id="gcol"><div id="gkind"></div><div id="gname"></div><div id="grole"></div><div id="gtext"></div></div></div>'+
   '<div id="bl" class="badge"><img><span></span></div><div id="bp" class="badge"><img><span></span></div><div id="dbg"></div></div>';
   if(P.get('debug'))$('dbg').style.display='block';
-  renderScreen();pull();setInterval(pull,1500);addEventListener('storage',pull);
+  renderScreen();addEventListener('storage',pull);
+  (async function loop(){await pull();setTimeout(loop,PREVIEW?2000:(lastFail?6000:3000))})();
 }
 
 /* ---------- PANEL ---------- */
@@ -348,7 +352,7 @@ function panelStart(){
    </div>
    <div class="col">
     <div class="card"><h2>Vista previa</h2>
-     <div class="prev" id="prev"><iframe src="${base}?view=screen${sy}"></iframe></div></div>
+     <div class="prev" id="prev"><iframe src="${base}?view=screen${sy}&preview=1"></iframe></div></div>
     <div class="card"><h2>Identidad de la radio</h2>
      <div class="row"><div><label>Nombre de la radio</label><input type="text" id="radio"></div>
      <div><label>Nombre del programa</label><input type="text" id="program"></div></div>
